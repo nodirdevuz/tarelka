@@ -344,6 +344,20 @@ nav.tabs button[aria-current="page"] svg{background:var(--grad);color:#fff}
       <p class="small" id="wNote"></p>
     </div>
     <div class="card">
+      <span class="h">Мои анализы</span>
+      <div class="days3" id="labList"></div>
+      <div class="addbox">
+        <span class="small muted">Записать новый результат</span>
+        <div class="f4">
+          <div class="field" style="grid-column:span 2"><label for="lT">Анализ</label><select id="lT"></select></div>
+          <div class="field"><label for="lV">Результат</label><input id="lV" type="number" inputmode="decimal" step="0.01"></div>
+          <div class="field"><label for="lD">Дата</label><input id="lD" type="date"></div>
+        </div>
+        <button class="solid" id="lSave" type="button">Записать</button>
+      </div>
+      <p class="small muted">Это подсказка, не диагноз. Что делать с результатом — решает врач.</p>
+    </div>
+    <div class="card">
       <span class="h">Советы</span>
       <div class="tips">
         <div class="tip"><svg viewBox="0 0 28 28"><circle cx="14" cy="14" r="10"/><path d="M14 8v6l4 3"/></svg><div><b>Ешь по часам, не по голоду</b><p>4–5 раз в день, каждые 3–4 часа. Аппетит вернётся сам.</p></div></div>
@@ -431,6 +445,14 @@ const DAYS={rest:{n:'Отдых',f:1.4,ic:'<path d="M4 17v-5a2 2 0 0 1 2-2h12a2 
 const WD=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
 /* owner's plan: legs/back = hard, upper body = light */
 const PLAN_DEF={0:{t:'light',n:'Грудь и бицепс'},1:{t:'light',n:'Руки и плечи'},2:{t:'rest',n:''},3:{t:'hard',n:'Ноги и плечи'},4:{t:'rest',n:''},5:{t:'hard',n:'Спина и трицепс'},6:{t:'rest',n:''}};
+/* lab tests: reference ranges from the owner's lab (Helix) */
+const LABS=[
+  {id:'vitd',name:'Витамин D',unit:'нг/мл',lo:30,hi:100,why:'Силы, кости, иммунитет. Зимой в Сибири почти у всех мало.'},
+  {id:'testo',name:'Тестостерон',unit:'нмоль/л',lo:8.64,hi:29,why:'Рост мышц, энергия, настроение.'},
+  {id:'estr',name:'Эстрадиол',unit:'пг/мл',lo:11.26,hi:43.25,why:'Мужчине тоже нужен, но в меру.'},
+  {id:'ferr',name:'Ферритин',unit:'мкг/л',lo:20,hi:250,why:'Запас железа. Мало — усталость и одышка.'},
+];
+const LABS_SEED=[];
 const DEF_SEL={breakfast:{oat:1,egg:1,tvorog:1,banana:1},lunch:{buck:1,chicken:1,cucumber:150},dinner:{pasta:1,tushenka:1,tomato:150},snack:{shake:1,banana:1},rest:{rice:1,chicken:1}};
 
 /* ===== state ===== */
@@ -439,8 +461,8 @@ const pad=n=>String(n).padStart(2,'0');
 const dkey=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const todayKey=()=>dkey(new Date());
 const clone=o=>JSON.parse(JSON.stringify(o));
-let S={updated:0,profile:{w:70,h:169,a:25,s:'m',g:'gain'},mealSel:clone(DEF_SEL),plan:clone(PLAN_DEF),custom:[],over:{},weights:[],days:{}};
-try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);S={...S,...o,profile:{...S.profile,...(o.profile||{})},mealSel:{...clone(DEF_SEL),...(o.mealSel||{})},plan:o.plan||clone(PLAN_DEF)}}
+let S={updated:0,profile:{w:70,h:169,a:25,s:'m',g:'gain'},mealSel:clone(DEF_SEL),plan:clone(PLAN_DEF),custom:[],over:{},weights:[],labs:clone(LABS_SEED),days:{}};
+try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);S={...S,...o,profile:{...S.profile,...(o.profile||{})},mealSel:{...clone(DEF_SEL),...(o.mealSel||{})},plan:o.plan||clone(PLAN_DEF),labs:o.labs||clone(LABS_SEED)}}
   else{const v1=JSON.parse(localStorage.getItem('tarelka.v1')||'null');if(v1){if(v1.profile)S.profile={w:v1.profile.w,h:v1.profile.h,a:v1.profile.a,s:v1.profile.s,g:v1.profile.g};if(v1.custom)S.custom=v1.custom.map(c=>({...c,cat:c.cat==='x'?'v':c.cat}));if(v1.over)S.over=v1.over}}}catch(e){}
 const hr=new Date().getHours();
 const ui={tab:'plate',meal:hr<11?'breakfast':hr<16?'lunch':'dinner',rest:false,view:todayKey(),adding:null,editing:null,hl:null};
@@ -459,7 +481,7 @@ const curSel=()=>(S.mealSel[selKey()]=S.mealSel[selKey()]||{});
 let cloud=null,base='',dirtyState=false,dirtyDays=new Set(),timer=null,chain=Promise.resolve();
 function saveLocal(){try{const keys=Object.keys(S.days).sort().slice(-60);const days={};keys.forEach(k=>days[k]=S.days[k]);S.days=days;localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function persist(dayK){const now=Date.now();S.updated=now;dirtyState=true;if(dayK){ensureDay(dayK).updated=now;dirtyDays.add(dayK)}saveLocal();clearTimeout(timer);timer=setTimeout(flush,700)}
-function stateBody(){return {kind:'state',updated:S.updated,profile:S.profile,mealSel:S.mealSel,plan:S.plan,custom:S.custom,over:S.over,weights:S.weights.slice(-120)}}
+function stateBody(){return {kind:'state',updated:S.updated,profile:S.profile,mealSel:S.mealSel,plan:S.plan,custom:S.custom,over:S.over,weights:S.weights.slice(-120),labs:S.labs}}
 function flush(){if(!cloud)return;const st=dirtyState,ds=[...dirtyDays];dirtyState=false;dirtyDays.clear();if(!st&&!ds.length)return;
   chain=chain.then(async()=>{try{if(st)await cloud.doc(base+'/state').set(clone(stateBody()));
     for(const k of ds){const d=S.days[k];if(d)await cloud.doc(base+'/day-'+k).set(clone({kind:'day',date:k,day:d.day,meals:d.meals,updated:d.updated||Date.now()}))}
@@ -470,7 +492,7 @@ async function initCloud(){
     const [db,user]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);if(!db||!user)return;
     const uid=await user.id();if(!uid)return;base='data/users/'+uid;
     const st=await db.doc(base+'/state').get();
-    if(st.exists){const r=clone(st.data());if((r.updated||0)>(S.updated||0)){S.profile={...S.profile,...(r.profile||{})};S.mealSel={...clone(DEF_SEL),...(r.mealSel||{})};S.plan=r.plan||S.plan;S.custom=r.custom||[];S.over=r.over||{};S.weights=r.weights||[];S.updated=r.updated}else if(S.updated)dirtyState=true}
+    if(st.exists){const r=clone(st.data());if((r.updated||0)>(S.updated||0)){S.profile={...S.profile,...(r.profile||{})};S.mealSel={...clone(DEF_SEL),...(r.mealSel||{})};S.plan=r.plan||S.plan;S.custom=r.custom||[];S.over=r.over||{};S.weights=r.weights||[];S.labs=r.labs||S.labs;S.updated=r.updated}else if(S.updated)dirtyState=true}
     else if(S.updated)dirtyState=true;
     const q=await db.collection(base).where('kind','==','day').orderBy('date','desc').limit(60).get();
     const seen=new Set();
@@ -655,13 +677,38 @@ function renderNorm(){
   const W=S.weights.slice(-12),sp=$('#spark');
   if(W.length>1){const vs=W.map(x=>x.w),mn=Math.min(...vs)-.3,mx=Math.max(...vs)+.3,X=i=>8+i*(284/(W.length-1)),Y=v=>56-(v-mn)/(mx-mn)*48;
     const pts=W.map((x,i)=>`${X(i).toFixed(1)},${Y(x.w).toFixed(1)}`).join(' ');
-    sp.innerHTML=`<polyline points="${pts}" fill="none" stroke="var(--ok)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;sp.hidden=false}else sp.hidden=true;
+    sp.innerHTML=`<polyline points="${pts}" fill="none" stroke="var(--ok)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;sp.style.display=''}else sp.style.display='none';
   $('#wNote').innerHTML=weightNote();
+  renderLabs();
   const b=bmr(pr);
   $('#formula').innerHTML=`<div>Тело в покое тратит ${fmt(b)} ккал (формула Миффлина: вес, рост, возраст).</div>
    <div>× ${fmt(DAYS[dt].f,2)} за день сидя + зал (${DAYS[dt].n.toLowerCase()} день) ${{gain:'× 1,1 для роста мышц',keep:'',cut:'× 0,85 для сушки'}[pr.g]} = <b>${fmt(T.kcal)} ккал</b></div>
    <div>Белок: ${fmt(T.p/pr.w,1)} г на 1 кг веса = ${T.p} г. Жиры: не меньше 1 г на кг и 25% калорий = ${T.f} г. Остальное — углеводы: ${T.c} г.</div>
    <div class="muted">1 г белка или углеводов = 4 ккал, 1 г жира = 9 ккал. Это оценка — точнее всего покажет вес раз в неделю.</div>`;
+}
+function labStatus(L,v){
+  if(L.id==='vitd'&&v<20)return ['Дефицит','bad'];
+  if(v<L.lo)return [L.id==='vitd'?'Недостаточно':'Ниже нормы','bad'];
+  if(v>L.hi)return ['Выше нормы','bad'];
+  if(v>L.lo+(L.hi-L.lo)*.85)return ['Норма, у верхней границы','mid'];
+  return ['Норма','ok']}
+function renderLabs(){
+  const fd=k=>new Date(k+'T12:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric'});
+  $('#labList').innerHTML=LABS.map(L=>{const rs=(S.labs||[]).filter(x=>x.t===L.id).sort((a,b)=>a.d<b.d?-1:1);
+    if(!rs.length)return `<div class="d3" style="grid-template-columns:1fr"><b>${L.name}</b><span>Нет результатов · норма ${fmt(L.lo,2)}–${fmt(L.hi,2)} ${L.unit}</span></div>`;
+    const last=rs[rs.length-1],[st,cls]=labStatus(L,last.v),col={ok:'var(--ok)',mid:'var(--carb)',bad:'var(--fat)'}[cls];
+    const mx=Math.max(L.hi*1.2,last.v*1.1),X=v=>Math.max(0,Math.min(100,v/mx*100));
+    const hist=rs.length>1?`<span style="grid-column:1 / -1">Было: ${rs.slice(0,-1).slice(-3).map(x=>`${fmt(x.v,2)} (${fd(x.d)})`).join(', ')}</span>`:'';
+    return `<div class="d3" style="grid-template-columns:1fr auto;gap:6px 10px;align-items:center">
+      <b>${L.name}</b><b class="k num">${fmt(last.v,2)} <small style="font:500 12px var(--body);color:var(--muted)">${L.unit}</small></b>
+      <span style="grid-column:1 / -1;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="color:${col};font-weight:700">${st}</span><span>норма ${fmt(L.lo,2)}–${fmt(L.hi,2)} · ${fd(last.d)}</span></span>
+      <div style="grid-column:1 / -1;position:relative;height:12px;border-radius:999px;background:var(--sunk)" role="img" aria-label="${L.name}: ${fmt(last.v,2)}, норма ${fmt(L.lo,2)}–${fmt(L.hi,2)}">
+        <i style="position:absolute;top:0;bottom:0;left:${X(L.lo)}%;width:${X(L.hi)-X(L.lo)}%;background:var(--ok-soft);border-radius:999px;box-shadow:inset 0 0 0 1px var(--ok)"></i>
+        <i style="position:absolute;top:-3px;width:18px;height:18px;margin-left:-9px;left:${X(last.v)}%;border-radius:50%;background:${col};border:3px solid var(--surface);box-shadow:var(--shadow-sm)"></i></div>
+      <span style="grid-column:1 / -1">${L.why}</span>${hist}
+      <button type="button" class="lnk" data-labdel="${L.id}|${last.d}" style="grid-column:1 / -1;justify-self:start">Убрать последний результат</button></div>`}).join('');
+  const sel=$('#lT');if(!sel.options.length)sel.innerHTML=LABS.map(L=>`<option value="${L.id}">${L.name}, ${L.unit}</option>`).join('');
+  const dd=$('#lD');if(!dd.value)dd.value=todayKey();
 }
 function weightNote(){const W=S.weights;if(!W.length)return '<span class="muted">Взвешивайся раз в неделю утром, до еды. Здесь появится, правильно ли идёт набор.</span>';
   const last=W[W.length-1],lt=new Date(last.d+'T12:00');let ref=null;
@@ -728,6 +775,10 @@ document.addEventListener('click',e=>{
   if(ds.repeat!=null){const m=clone(getDay(ui.view).meals[+ds.repeat]),tk=todayKey();m.time=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});ensureDay(tk).meals.push(m);persist(tk);toast('Добавлено в сегодня');ui.view=tk;renderDays();return}
   if(b.id==='wSave'){const w=+$('#wIn').value;if(!(w>=35&&w<=200)){toast('Впиши вес в килограммах');return}
     const tk=todayKey();S.weights=S.weights.filter(x=>x.d!==tk);S.weights.push({d:tk,w});S.weights.sort((a,c)=>a.d<c.d?-1:1);S.profile.w=w;persist();renderNorm();toast('Вес записан');return}
+  if(b.id==='lSave'){const t=$('#lT').value,v=+String($('#lV').value).replace(',','.'),d=$('#lD').value||todayKey();
+    if(!(v>0)){toast('Впиши результат числом');return}
+    S.labs=(S.labs||[]).filter(x=>!(x.t===t&&x.d===d));S.labs.push({t,d,v});$('#lV').value='';persist();renderNorm();toast('Анализ записан');return}
+  if(ds.labdel){const [t,d]=ds.labdel.split('|');S.labs=(S.labs||[]).filter(x=>!(x.t===t&&x.d===d));persist();renderNorm();return}
   if(ds.edit){ui.editing=ui.editing===ds.edit?null:ds.edit;renderProd();return}
   if(ds.save){const id=ds.save,v={p:+$('#eP').value||0,f:+$('#eF').value||0,c:+$('#eC').value||0,k:+$('#eK').value||0};if(!v.k)v.k=Math.round(v.p*4+v.c*4+v.f*9);
     const cu=S.custom.find(c=>c.id===id);if(cu)Object.assign(cu,v);else S.over[id]=v;ui.editing=null;persist();renderProd();toast('Сохранено');return}
